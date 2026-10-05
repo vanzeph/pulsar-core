@@ -5,12 +5,15 @@ A-share quant system: a single-threaded event kernel, a Clock abstraction
 that makes backtest and realtime runs share one loop, a bar-level historical
 replay session, the RunManifest reproducibility mechanism, the strategy
 framework with its `Signal -> TargetPortfolio -> RiskGate -> OrderIntent`
-pipeline, and performance accounting with its run artifacts
-(`events.parquet` + metrics report).
+pipeline, performance accounting with its run artifacts (`events.parquet` +
+metrics report), and the research layer on top — a registered factor
+library, cross-sectional preprocessing, modeler registry, experiment TOML
+configuration and parameter sweeps.
 
 Status: alpha — the kernel, replay, manifest, strategy framework, intent
-pipeline and performance accounting are in; the factor library and the full
-five-rule risk set land in later releases.
+pipeline, the factor/experiment layer, the five-rule risk set and
+performance accounting are in; richer universes and modeler families land
+in later releases.
 
 ## Design in one paragraph
 
@@ -73,6 +76,79 @@ full Research-mode session — lives in
 ```bash
 python examples/dual_ma.py
 ```
+
+## The research layer: factors, modelers, experiments
+
+Layered configuration: factors, modelers and portfolio construction are
+*code plus registration*; an *experiment* is pure TOML. The pipeline runs
+`universe -> factor computation -> preprocessing -> modeler -> scores ->
+portfolio -> target weights`, and the weights flow into the very same
+`Signal -> TargetPortfolio -> RiskGate -> OrderIntent` pipeline as any
+hand-written strategy — nothing bypasses the risk exit.
+
+Built-in factors are bar-only by construction (momentum, volatility,
+reversal, intraday-range classes; a real `ep_ttm` needs a fundamentals
+channel the ports do not carry yet and would register through the same
+surface). Built-in modelers: `equal_weight`, `linear_score` (fixed
+weights) and `ic_weighted` (alias `linear_ic`, trailing mean rank-IC
+weights). Preprocessing composes cross-sectionally in config order:
+`winsorize`, `zscore`, `fillna`.
+
+```toml
+# experiments/momentum_value.toml
+[experiment]
+id = "momentum_value_2026q4"
+
+[universe]
+symbols = ["600000", "600009", "600016", "600028", "600030"]
+
+[factors]
+names = ["momentum_20", "volatility_20", "reversal_5"]
+preprocess = ["winsorize", "zscore"]
+
+[model]
+type = "ic_weighted"
+params = { lookback = 60, horizon = 5 }
+
+[portfolio]
+method = "top_n"
+top_n = 2
+rebalance = "monthly"
+
+[backtest]
+start = 2026-04-01
+end = 2026-09-30
+costs = "a_share_default"
+seed = 7
+```
+
+```python
+from pulsar_core import load_experiment, run_experiment, run_sweep
+
+result = run_experiment(load_experiment("experiments/momentum_value.toml"),
+                        port=my_market_data_port, venue=make_venue)
+print(result.experiment_id, result.run_id, result.runtime.intents)
+```
+
+A new experiment is a new TOML file — swap the factor subset, the modeler
+or `top_n` and rerun, zero code. Unknown sections or keys, wrong types and
+unregistered names fail at load time (`ExperimentConfigError`).
+
+Parameter sweeps extend the same document with `[[sweep.axis]]` entries;
+`run_sweep` materializes the cartesian product into a run family that
+shares one `experiment_id` while every run keeps its own configuration
+and `run_id` in the `RunManifest` — ready for controlled comparison
+views. A runnable demo of both entry points lives in
+[`examples/factor_experiment.py`](examples/factor_experiment.py):
+
+```bash
+python examples/factor_experiment.py          # one experiment
+python examples/factor_experiment.py --sweep  # a 4-run sweep family
+```
+
+Registered universes (`experiment.universe = "hs300"`) are added with
+`register_universe`; a `[universe] symbols = [...]` section spells one
+out inline — exactly one of the two forms per document.
 
 ## Wiring a Research run
 

@@ -17,6 +17,7 @@ __all__ = [
     "PulsarCoreError",
     "DataGapError",
     "ClockWentBackwardsError",
+    "ExperimentConfigError",
 ]
 
 
@@ -43,3 +44,14 @@ class DataGapError(PulsarCoreError):
 
 class ClockWentBackwardsError(PulsarCoreError):
     """The backtest clock was asked to move to a timestamp before its current time."""
+
+
+class ExperimentConfigError(PulsarCoreError):
+    """An experiment TOML document is malformed or fails validation.
+
+    Raised by the experiment loader for unknown sections or keys, missing
+    required values, type mismatches, unregistered names (factor / model /
+    preprocess step / portfolio method / universe) and sweep axes that do
+    not address the template — a broken config must fail loudly at load
+    time instead of half-running later.
+    """

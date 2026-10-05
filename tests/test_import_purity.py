@@ -23,6 +23,7 @@ ALLOWED_IMPORT_ROOTS = {
     # stdlib basics
     "__future__",
     "collections",
+    "bisect",
     "datetime",
     "enum",
     "hashlib",
@@ -34,6 +35,7 @@ ALLOWED_IMPORT_ROOTS = {
     "pathlib",
     "random",
     "subprocess",
+    "tomllib",
     "typing",
     # basic third-party libraries
     "pydantic",

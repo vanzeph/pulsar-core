@@ -6,8 +6,10 @@ bar-level historical replay session, the RunManifest reproducibility
 mechanism, the strategy framework with its Signal -> TargetPortfolio ->
 RiskGate -> OrderIntent pipeline guarded by the five-rule pre-trade risk
 chain (single-position cap, gross exposure cap, daily-loss halt, symbol
-blacklist, liquidity floor), and performance accounting with its run
-artifacts (events.parquet archive + metrics report).
+blacklist, liquidity floor), performance accounting with its run artifacts
+(events.parquet archive + metrics report), and the research layer: a
+registered factor library, cross-sectional preprocessing, the modeler
+registry, experiment TOML configuration and parameter sweeps.
 
 Dependency policy (architecture baseline): pulsar-core depends only on
 pulsar-contracts plus basic libraries. It must never import a data-source or
@@ -21,7 +23,12 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .bus import EventBus, Handler, canonical_event_json
 from .clock import BacktestClock, Clock, RealtimeClock
-from .errors import ClockWentBackwardsError, DataGapError, PulsarCoreError
+from .errors import (
+    ClockWentBackwardsError,
+    DataGapError,
+    ExperimentConfigError,
+    PulsarCoreError,
+)
 from .events import Event, EventKind, SessionPhase, TimerPayload
 from .manifest import RunManifest, bars_watermark, code_version, load_manifest
 from .session import ReplaySession, RunResult
@@ -93,6 +100,65 @@ from .performance import (
     load_metrics_report,
 )
 
+# -- research layer: factors, experiments, sweeps (C3) -------------------------
+
+from .experiment import (
+    KNOWN_SECTIONS,
+    UNIVERSE_REGISTRY,
+    ExperimentConfig,
+    SweepAxis,
+    SweepExpansion,
+    expand_sweep,
+    load_experiment,
+    parse_experiment,
+    register_universe,
+)
+from .factors import (
+    FACTOR_REGISTRY,
+    FactorDefinition,
+    factor_value,
+    momentum_factor,
+    range_factor,
+    register_factor,
+    reversal_factor,
+    volatility_factor,
+)
+from .modelers import (
+    MODEL_REGISTRY,
+    CrossSection,
+    EqualWeightScorer,
+    FactorHistoryView,
+    IcWeightedScorer,
+    LinearScoreScorer,
+    ModelDefinition,
+    ModelScorer,
+    spearman_ic,
+)
+from .pipeline import (
+    REBALANCE_FREQUENCIES,
+    FactorEngine,
+    FactorModelStrategy,
+    rebalance_dates,
+    required_warmup,
+)
+from .portfolio import PORTFOLIO_REGISTRY, PortfolioConstructor, TopNConstructor
+from .preprocess import (
+    PREPROCESS_REGISTRY,
+    FillNaStep,
+    PreprocessStep,
+    WinsorizeStep,
+    ZscoreStep,
+    build_step,
+)
+from .registry import Registry
+from .runner import (
+    ExperimentRunResult,
+    SweepReport,
+    VenueFactory,
+    run_experiment,
+    run_sweep,
+)
+
 try:
     __version__ = version("pulsar-core")
 except PackageNotFoundError:  # pragma: no cover - source checkout without install
@@ -125,6 +191,7 @@ __all__ = [
     "PulsarCoreError",
     "DataGapError",
     "ClockWentBackwardsError",
+    "ExperimentConfigError",
     # strategy parameters
     "Param",
     "Params",
@@ -188,4 +255,58 @@ __all__ = [
     "write_event_archive",
     "read_event_archive",
     "write_run_artifacts",
+    # registries (name -> registered code things)
+    "Registry",
+    "FACTOR_REGISTRY",
+    "PREPROCESS_REGISTRY",
+    "MODEL_REGISTRY",
+    "PORTFOLIO_REGISTRY",
+    "UNIVERSE_REGISTRY",
+    # factor library
+    "FactorDefinition",
+    "factor_value",
+    "register_factor",
+    "momentum_factor",
+    "volatility_factor",
+    "reversal_factor",
+    "range_factor",
+    # cross-sectional preprocessing
+    "PreprocessStep",
+    "WinsorizeStep",
+    "ZscoreStep",
+    "FillNaStep",
+    "build_step",
+    # modelers
+    "CrossSection",
+    "FactorHistoryView",
+    "ModelScorer",
+    "ModelDefinition",
+    "EqualWeightScorer",
+    "LinearScoreScorer",
+    "IcWeightedScorer",
+    "spearman_ic",
+    # portfolio construction
+    "PortfolioConstructor",
+    "TopNConstructor",
+    # factor pipeline
+    "REBALANCE_FREQUENCIES",
+    "rebalance_dates",
+    "required_warmup",
+    "FactorEngine",
+    "FactorModelStrategy",
+    # experiment configuration & sweeps
+    "KNOWN_SECTIONS",
+    "ExperimentConfig",
+    "SweepAxis",
+    "SweepExpansion",
+    "load_experiment",
+    "parse_experiment",
+    "expand_sweep",
+    "register_universe",
+    # run entry points
+    "ExperimentRunResult",
+    "SweepReport",
+    "VenueFactory",
+    "run_experiment",
+    "run_sweep",
 ]

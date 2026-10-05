@@ -1,0 +1,39 @@
+# Parameter sweep over the momentum_value template.
+#
+# expand_sweep / run_sweep materialize the cartesian product of the axes
+# into a run family: every run shares experiment.id = "momentum_value_sweep"
+# while each carries its own configuration (and therefore its own run_id
+# in the RunManifest), ready for the backtest comparison views.
+
+[experiment]
+id = "momentum_value_sweep"
+description = "sweep: model type x portfolio width"
+
+[universe]
+symbols = ["600000", "600009", "600016", "600028", "600030"]
+
+[factors]
+names = ["momentum_20", "volatility_20", "reversal_5"]
+preprocess = ["winsorize", "zscore"]
+
+[model]
+type = "equal_weight"
+
+[portfolio]
+method = "top_n"
+top_n = 2
+rebalance = "monthly"
+
+[backtest]
+start = 2026-04-01
+end = 2026-09-30
+costs = "a_share_default"
+seed = 7
+
+[[sweep.axis]]
+path = "model.type"
+values = ["equal_weight", "ic_weighted"]
+
+[[sweep.axis]]
+path = "portfolio.top_n"
+values = [1, 2]
