@@ -55,9 +55,9 @@ from pulsar_core import (
     Params,
     ReplaySession,
     RiskGate,
-    SinglePositionCapRule,
     StrategyBase,
     StrategyRuntime,
+    standard_risk_chain,
 )
 
 SYMBOL = "600000"
@@ -288,7 +288,9 @@ def main() -> None:
         bus=bus,
         port=venue,
         strategy=strategy,
-        gate=RiskGate((SinglePositionCapRule(1.0),)),
+        # the design's five pre-trade rules at standard parameters; a real
+        # assembly passes its own thresholds via standard_risk_chain(...)
+        gate=RiskGate(standard_risk_chain()),
         initial_cash=100_000.0,
     )
     session = ReplaySession(

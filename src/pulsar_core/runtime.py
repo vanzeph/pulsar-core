@@ -47,7 +47,7 @@ from .errors import PulsarCoreError
 from .events import Event, EventKind, SessionPhase
 from .manifest import RunManifest
 from .rebalance import DEFAULT_LOT_SIZE, OrderDraft, SkippedLeg, compute_rebalance
-from .risk import RejectionRecord, RiskGate, RiskView, SinglePositionCapRule
+from .risk import RejectionRecord, RiskGate, RiskView, standard_risk_chain
 from .signals import PortfolioBuilder, PassThroughBuilder, Signal
 from .strategy import (
     BaseContext,
@@ -106,17 +106,19 @@ class StrategyRuntime:
         self._port = port
         self._strategy = strategy
         self._builder = builder if builder is not None else PassThroughBuilder()
-        # Default chain: the single-position cap at 1.0 (no leverage, no
-        # shorting through one name). Assembly overrides with its own chain.
-        self._gate = (
-            gate if gate is not None else RiskGate((SinglePositionCapRule(1.0),))
-        )
+        # Default chain: the design's five pre-trade rules (daily-loss halt,
+        # blacklist, liquidity floor, single-position cap, gross exposure cap)
+        # at their standard parameters — no leverage, no halts below 5% daily
+        # drawdown, 1M CNY turnover floor. Assembly overrides with its own
+        # chain built from ``standard_risk_chain`` or raw rules.
+        self._gate = gate if gate is not None else RiskGate(standard_risk_chain())
         self._lot_size = lot_size
 
         self.account = TradingAccount(cash=initial_cash)
         self._state: dict[str, Any] = {}
         self._history: dict[str, deque[Any]] = {}
         self._history_depth = history_depth
+        self._last_amounts: dict[str, float] = {}
         self._pending_orders: dict[OrderId, _PendingOrder] = {}
         self._seq = 0
         self._run_id: str | None = None
@@ -159,6 +161,11 @@ class StrategyRuntime:
         return self._strategy
 
     @property
+    def gate(self) -> RiskGate:
+        """The chain guarding this run's intent exit (read-only access)."""
+        return self._gate
+
+    @property
     def state(self) -> dict[str, Any]:
         """The strategy's explicit state dict (archive with the run)."""
         return self._state
@@ -187,6 +194,7 @@ class StrategyRuntime:
         if bar is not None:
             self._rollover_if_new_day(bar.ts.date())
             self.account.mark_price(bar.symbol, bar.close)
+            self._last_amounts[bar.symbol] = bar.amount
             history = self._history.setdefault(
                 bar.symbol, deque(maxlen=self._history_depth)
             )
@@ -204,6 +212,7 @@ class StrategyRuntime:
         elif snapshot is not None:
             self._rollover_if_new_day(snapshot.ts.date())
             self.account.mark_price(snapshot.symbol, snapshot.last_price)
+            self._last_amounts[snapshot.symbol] = snapshot.amount
             collector = _Declarations()
             tick_ctx = TickContext(
                 snapshot=snapshot,
@@ -276,6 +285,7 @@ class StrategyRuntime:
             cash=self.account.cash,
             positions=positions,
             last_prices=self.account.prices,
+            last_amounts=dict(self._last_amounts),
             pending=self._net_pending(),
         )
         outcome = self._gate.review(result.drafts, view)

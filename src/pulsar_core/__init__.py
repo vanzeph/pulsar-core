@@ -4,7 +4,9 @@ This package implements the single-threaded deterministic event kernel, the
 Clock abstraction that lets backtest and realtime runs share one loop, the
 bar-level historical replay session, the RunManifest reproducibility
 mechanism, and the strategy framework with its Signal -> TargetPortfolio ->
-RiskGate -> OrderIntent pipeline.
+RiskGate -> OrderIntent pipeline guarded by the five-rule pre-trade risk
+chain (single-position cap, gross exposure cap, daily-loss halt, symbol
+blacklist, liquidity floor).
 
 Dependency policy (architecture baseline): pulsar-core depends only on
 pulsar-contracts plus basic libraries. It must never import a data-source or
@@ -35,12 +37,18 @@ from .rebalance import (
     compute_rebalance,
 )
 from .risk import (
+    DailyLossHaltRule,
     GateOutcome,
+    LiquidityFloorRule,
+    PortfolioExposureCapRule,
     RejectionRecord,
     RiskGate,
     RiskRule,
     RiskView,
+    RuleRejection,
     SinglePositionCapRule,
+    SymbolBlacklistRule,
+    standard_risk_chain,
 )
 from .runtime import DEFAULT_HISTORY_DEPTH, StrategyRuntime, Submission
 from .signals import (
@@ -126,9 +134,15 @@ __all__ = [
     "RiskRule",
     "RiskGate",
     "RiskView",
+    "RuleRejection",
     "RejectionRecord",
     "GateOutcome",
     "SinglePositionCapRule",
+    "PortfolioExposureCapRule",
+    "DailyLossHaltRule",
+    "SymbolBlacklistRule",
+    "LiquidityFloorRule",
+    "standard_risk_chain",
     # intent pipeline
     "StrategyRuntime",
     "Submission",
