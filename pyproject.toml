@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pulsar-core"
+version = "0.1.0"
+description = "Pulsar core engine: single-threaded deterministic event kernel, Clock abstraction, bar replay session and RunManifest reproducibility."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "vanzeph" }]
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5,<3",
+    "pandas>=2.0",
+    "pulsar-contracts @ git+https://github.com/vanzeph/pulsar-contracts.git@f385fbd",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "mypy>=1.8",
+    "pandas-stubs>=2",
+]
+
+[project.urls]
+Repository = "https://github.com/vanzeph/pulsar-core"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pulsar_core"]
+
+[tool.hatch.metadata]
+# pulsar-contracts is referenced as a pinned git commit (versioned
+# cross-repo reference) until it is published with a git tag.
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+# pulsar-contracts does not ship a py.typed marker yet (PEP 561), so its
+# ContractModel base resolves to Any here. Restore this once contracts
+# declares itself typed.
+disallow_subclassing_any = false
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = "pulsar_contracts"
+# see the disallow_subclassing_any note above
+ignore_missing_imports = true
