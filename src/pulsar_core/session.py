@@ -156,6 +156,7 @@ class ReplaySession:
         seed: int = 0,
         config: dict[str, Any] | None = None,
         code_version: str | None = None,
+        config_commit: "str | None" = None,
         bus: EventBus | None = None,
         on_manifest: Callable[[RunManifest], None] | None = None,
     ) -> None:
@@ -172,6 +173,7 @@ class ReplaySession:
         self._seed = seed
         self._config: dict[str, Any] = dict(config) if config else {}
         self._code_version = code_version
+        self._config_commit = config_commit
         self._on_manifest = on_manifest
         self._bus = bus if bus is not None else EventBus(
             BacktestClock(_day_start(start))
@@ -233,6 +235,7 @@ class ReplaySession:
             config=self._snapshot_config(),
             code_version=self._code_version,
             data_watermarks=bars_watermark(bars),
+            config_commit=self._config_commit,
         )
 
         if self._on_manifest is not None:

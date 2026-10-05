@@ -34,6 +34,7 @@ from .bus import EventBus
 from .clock import BacktestClock
 from .errors import PulsarCoreError
 from .experiment import ExperimentConfig, SweepExpansion, expand_sweep
+from .lifecycle import experiment_commit, validate_assembly
 from .manifest import RunManifest
 from .pipeline import FactorEngine, FactorModelStrategy, rebalance_dates, required_warmup
 from .rebalance import DEFAULT_LOT_SIZE
@@ -125,6 +126,7 @@ def run_experiment(
     gate: "RiskGate | None" = None,
     bus: "EventBus | None" = None,
     expansion: SweepExpansion | None = None,
+    config_commit: "str | None" = None,
 ) -> ExperimentRunResult:
     """Run one (already validated) experiment over the injected ports.
 
@@ -133,7 +135,18 @@ def run_experiment(
     its own venue). ``expansion`` carries the sweep point when this run
     belongs to a family — it is stamped into the manifest so run ids
     differ per point while the experiment id stays shared.
+
+    This is the Research assembler, so the lifecycle gate applies
+    (模型配置生命周期): a ``retired`` experiment is refused outright —
+    post-mortems replay archives, they do not re-run — while ``candidate``
+    and ``active`` both admit research. ``config_commit`` records the git
+    commit of the experiment configuration this assembly used (explicit
+    sha wins; otherwise resolved from the file the config was loaded
+    from), keeping "which version ran" traceable.
     """
+    validate_assembly("research", experiment)
+    if config_commit is None and experiment.source_path is not None:
+        config_commit = experiment_commit(experiment.source_path)
     if experiment.sweep and expansion is None:
         raise PulsarCoreError(
             "this experiment declares sweep axes; run it through run_sweep "
@@ -203,6 +216,7 @@ def run_experiment(
         end=experiment.end,
         seed=experiment.seed,
         config=config,
+        config_commit=config_commit,
         bus=bus,
         on_manifest=runtime.bind_manifest,
     )

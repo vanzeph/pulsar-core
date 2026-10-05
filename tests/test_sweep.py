@@ -24,6 +24,7 @@ SWEEP_TOML = """
 [experiment]
 id = "sweep_family_2026q4"
 description = "model type x portfolio width"
+status = "candidate"
 
 [universe]
 symbols = ["UP", "MILD", "FLAT", "DN"]

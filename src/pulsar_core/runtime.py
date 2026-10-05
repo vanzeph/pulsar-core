@@ -45,6 +45,7 @@ from .account import PositionView, TradingAccount
 from .bus import EventBus
 from .errors import PulsarCoreError
 from .events import Event, EventKind, SessionPhase
+from .lifecycle import LifecycleRecord
 from .manifest import RunManifest
 from .rebalance import DEFAULT_LOT_SIZE, OrderDraft, SkippedLeg, compute_rebalance
 from .risk import RejectionRecord, RiskGate, RiskView, standard_risk_chain
@@ -122,7 +123,9 @@ class StrategyRuntime:
         self._pending_orders: dict[OrderId, _PendingOrder] = {}
         self._seq = 0
         self._run_id: str | None = None
+        self._manifest: RunManifest | None = None
         self._current_day: date | None = None
+        self._retire_record: LifecycleRecord | None = None
 
         #: Everything the run produced, in deterministic order.
         self.submissions: list[Submission] = []
@@ -142,9 +145,12 @@ class StrategyRuntime:
         """Receive the run's manifest; intents key off its ``run_id``.
 
         Wire this as ``ReplaySession(..., on_manifest=runtime.bind_manifest)``
-        so idempotency keys identify the run the venue is executing.
+        so idempotency keys identify the run the venue is executing. The
+        manifest reference is also kept for the lifecycle audit overlay:
+        a mid-run :meth:`retire` stamps its record there.
         """
         self._run_id = manifest.run_id
+        self._manifest = manifest
 
     @property
     def run_id(self) -> str:
@@ -174,6 +180,59 @@ class StrategyRuntime:
     def intents(self) -> tuple[OrderIntent, ...]:
         """Every emitted intent, in emission order."""
         return tuple(submission.intent for submission in self.submissions)
+
+    # -- lifecycle (下线) -------------------------------------------------------
+
+    @property
+    def retired(self) -> bool:
+        """Whether this session received a retire and stopped deciding."""
+        return self._retire_record is not None
+
+    @property
+    def retire_record(self) -> LifecycleRecord | None:
+        """The audit record of the retire this session received, if any."""
+        return self._retire_record
+
+    def retire(
+        self,
+        *,
+        reason: str,
+        operator: str = "",
+        ts: datetime | None = None,
+        from_status: str = "active",
+        to_status: str = "retired",
+    ) -> LifecycleRecord:
+        """Take this session offline: no new order intents, ever again.
+
+        Core-engine design (模型配置生命周期): a running session that
+        receives a 下线 immediately stops producing new order intents.
+        The checkpoint sits at the pipeline entry — declarations are
+        dropped before the diff calculation, so nothing reaches the risk
+        gate or the venue — and ``_emit`` carries a second, defensive
+        backstop. Existing positions are deliberately *not* force-sold:
+        they follow the strategy's own exit rules.
+
+        The action is archived into the bound run's manifest (lifecycle
+        audit overlay: status change, reason, timestamp), so the archived
+        document answers "why did this run stop trading". ``ts`` defaults
+        to the kernel clock's now — deterministic under replay, real time
+        under a realtime clock. Retiring twice is idempotent: the first
+        record stays authoritative and is returned.
+        """
+        if self._retire_record is not None:
+            return self._retire_record
+        record = LifecycleRecord(
+            action="retire",
+            from_status=from_status,
+            to_status=to_status,
+            reason=reason,
+            operator=operator,
+            ts=ts if ts is not None else self._bus.now,
+        )
+        self._retire_record = record
+        if self._manifest is not None:
+            self._manifest.record_lifecycle(record)
+        return record
 
     # -- event handlers ---------------------------------------------------------
 
@@ -261,6 +320,12 @@ class StrategyRuntime:
     # -- pipeline ----------------------------------------------------------------
 
     def _run_pipeline(self, signals: list[Signal], *, now: datetime) -> None:
+        if self._retire_record is not None:
+            # 下线 checkpoint: a retired session never produces new order
+            # intents — declarations are dropped before any diff, risk or
+            # emission happens. Existing positions are left to the
+            # strategy's own exit rules (no force-selling here).
+            return
         if not signals:
             return
         target = self._builder.build(signals)
@@ -299,6 +364,19 @@ class StrategyRuntime:
         The single ``port.submit`` call site of this package: nothing else
         may talk to the venue, and this path always runs after the gate.
         """
+        if self._retire_record is not None:  # defensive backstop of the
+            # retire checkpoint in _run_pipeline — a retired session emits
+            # nothing, and a draft reaching this point is recorded, not sent
+            self.skipped.append(
+                SkippedLeg(
+                    symbol=draft.symbol,
+                    reason=(
+                        "experiment retired: session stopped producing new "
+                        f"order intents ({self._retire_record.reason})"
+                    ),
+                )
+            )
+            return
         if self._run_id is None:
             raise PulsarCoreError(
                 "run id not bound: pass on_manifest=runtime.bind_manifest to "

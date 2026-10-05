@@ -8,6 +8,7 @@
 [experiment]
 id = "momentum_value_sweep"
 description = "sweep: model type x portfolio width"
+status = "candidate"
 
 [universe]
 symbols = ["600000", "600009", "600016", "600028", "600030"]

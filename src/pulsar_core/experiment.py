@@ -9,6 +9,7 @@ backtest settings. A new experiment is a new file, zero code::
     [experiment]
     id = "momentum_value_2026q4"
     universe = "hs300"                      # registered universe name
+    status = "candidate"                    # candidate | active | retired
 
     [factors]
     names = ["momentum_20", "volatility_20", "reversal_5"]
@@ -32,9 +33,9 @@ The universe may alternatively be spelled as its own section with an
 explicit symbol list (``[universe] symbols = [...]``) — exactly one of
 the two forms is required. Loading validates everything: unknown
 sections, unknown keys inside every section, wrong types, missing
-required values, unregistered names and sweep axes that do not address
-the template all raise :class:`~pulsar_core.errors.ExperimentConfigError`
-at load time.
+required values (including the lifecycle ``status``), unregistered names
+and sweep axes that do not address the template all raise
+:class:`~pulsar_core.errors.ExperimentConfigError` at load time.
 
 Parameter sweeps (参数扫描) extend the same file with a ``[sweep]``
 section of axes; :func:`expand_sweep` materializes the cartesian product
@@ -54,6 +55,7 @@ import tomllib
 
 from .errors import ExperimentConfigError, PulsarCoreError
 from .factors import FACTOR_REGISTRY, FactorDefinition
+from .lifecycle import STATUS_ALLOWED_MODES, ExperimentStatus
 from .modelers import MODEL_REGISTRY, ModelScorer
 from .pipeline import REBALANCE_FREQUENCIES
 from .portfolio import PORTFOLIO_REGISTRY, PortfolioConstructor
@@ -84,7 +86,7 @@ KNOWN_SECTIONS: tuple[str, ...] = (
 )
 
 _SECTION_KEYS: dict[str, tuple[str, ...]] = {
-    "experiment": ("id", "universe", "description"),
+    "experiment": ("id", "universe", "description", "status"),
     "universe": ("name", "symbols"),
     "factors": ("names", "preprocess"),
     "model": ("type", "params"),
@@ -207,7 +209,11 @@ class ExperimentConfig:
     Carries both the as-written TOML tree (``raw``, JSON-native apart
     from TOML dates — used for manifest snapshots and sweep expansion)
     and the resolved building blocks (factor definitions, preprocess
-    steps, scorer, portfolio constructor, universe symbols).
+    steps, scorer, portfolio constructor, universe symbols). The lifecycle
+    ``status`` (candidate / active / retired, required) resolves together
+    with the modes that status admits (``allowed_modes``); assembly layers
+    enforce the pairing via
+    :func:`~pulsar_core.lifecycle.validate_assembly`.
     """
 
     def __init__(
@@ -227,6 +233,8 @@ class ExperimentConfig:
         costs: str,
         seed: int,
         sweep: Sequence[SweepAxis],
+        status: str = ExperimentStatus.CANDIDATE,
+        source_path: "str | None" = None,
     ) -> None:
         self.raw: dict[str, Any] = _clone_tree(raw)
         self.experiment_id = experiment_id
@@ -242,6 +250,19 @@ class ExperimentConfig:
         self.costs = costs
         self.seed = seed
         self.sweep = tuple(sweep)
+        if status not in STATUS_ALLOWED_MODES:
+            raise ExperimentConfigError(
+                f"experiment.status must be one of {ExperimentStatus.ALL}, "
+                f"got {status!r}"
+            )
+        self.status: str = status
+        #: Modes this status may be assembled in (derived from the design's
+        #: lifecycle table, not declarable in TOML — a config cannot grant
+        #: itself paper/live rights).
+        self.allowed_modes: tuple[str, ...] = STATUS_ALLOWED_MODES[status]
+        #: Where the document was loaded from, when it came from a file;
+        #: the assembly layer resolves the registry git commit from it.
+        self.source_path = source_path
 
     @property
     def factor_names(self) -> tuple[str, ...]:
@@ -266,10 +287,14 @@ def load_experiment(path: str | Path) -> ExperimentConfig:
         raise ExperimentConfigError(f"{path}: invalid TOML ({exc})") from exc
     except OSError as exc:
         raise ExperimentConfigError(f"{path}: cannot read experiment ({exc})") from exc
-    return parse_experiment(tree)
+    return parse_experiment(tree, source_path=str(path))
 
 
-def parse_experiment(tree: Mapping[str, Any]) -> ExperimentConfig:
+def parse_experiment(
+    tree: Mapping[str, Any],
+    *,
+    source_path: "str | None" = None,
+) -> ExperimentConfig:
     """Validate a parsed TOML tree into an :class:`ExperimentConfig`."""
     if not isinstance(tree, Mapping):
         raise ExperimentConfigError("experiment document must be a TOML table")
@@ -291,6 +316,7 @@ def parse_experiment(tree: Mapping[str, Any]) -> ExperimentConfig:
     description = _string(experiment.get("description", ""), "experiment.description")
     if not experiment_id:
         raise ExperimentConfigError("experiment.id must be a non-empty string")
+    status = _status(experiment.get("status"))
 
     symbols = _resolve_symbols(experiment, universe, backtest)
 
@@ -318,7 +344,29 @@ def parse_experiment(tree: Mapping[str, Any]) -> ExperimentConfig:
         costs=costs,
         seed=seed,
         sweep=axes,
+        status=status,
+        source_path=source_path,
     )
+
+
+def _status(value: Any) -> str:
+    """Validate the required lifecycle status (candidate/active/retired)."""
+    if value is None:
+        raise ExperimentConfigError(
+            "experiment.status is required and must be one of "
+            f"{ExperimentStatus.ALL} (candidate = research only; active = "
+            "research/paper/live; retired = read-only post-mortem)"
+        )
+    if not isinstance(value, str):
+        raise ExperimentConfigError(
+            f"experiment.status must be a string, got {value!r}"
+        )
+    if value not in STATUS_ALLOWED_MODES:
+        raise ExperimentConfigError(
+            f"experiment.status must be one of {ExperimentStatus.ALL}, "
+            f"got {value!r}"
+        )
+    return value
 
 
 # -- section validators ---------------------------------------------------------------

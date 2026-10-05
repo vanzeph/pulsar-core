@@ -98,6 +98,7 @@ weights). Preprocessing composes cross-sectionally in config order:
 # experiments/momentum_value.toml
 [experiment]
 id = "momentum_value_2026q4"
+status = "candidate"                # candidate | active | retired
 
 [universe]
 symbols = ["600000", "600009", "600016", "600028", "600030"]
@@ -183,6 +184,52 @@ result.manifest.write("run.json")   # reproducibility record
 print(runtime.intents, runtime.rejections, runtime.account.snapshot())
 ```
 
+## Experiment lifecycle: candidate -> active -> retired
+
+Every experiment document carries a required `experiment.status`, and the
+assembly layer enforces the design's status/mode matrix:
+
+| status | runnable modes |
+|-|-|
+| `candidate` | research only |
+| `active` | research, paper, live |
+| `retired` | none — read-only post-mortem (replays archives, never re-runs) |
+
+```python
+from pulsar_core import LifecycleError, validate_assembly
+
+validate_assembly("paper", experiment)   # raises LifecycleError unless active
+```
+
+The registry is the `experiments/` directory itself under git — no
+database. Promotion and retirement are human-driven transitions that
+rewrite exactly the one `status` line in place (git history is the audit
+trail) and return a `LifecycleRecord`:
+
+```python
+from pulsar_core import activate_experiment, retire_experiment
+
+record = activate_experiment(   # 上线: needs explicit human confirmation
+    "experiments/momentum_value.toml",
+    reason="passed research acceptance 2026-09-30", operator="guanlan",
+    confirmed=True,
+)
+record = retire_experiment(     # 下线
+    "experiments/momentum_value.toml",
+    reason="signal decayed after regime change", operator="guanlan",
+)
+```
+
+A *running* session that receives a retire stops producing new order
+intents immediately — `runtime.retire(reason=..., operator=...)` drops
+every further declaration at the pipeline entry (existing positions are
+left to the strategy's own exit rules; nothing is force-sold) — and
+stamps the action into the run's `RunManifest` as a `lifecycle` audit
+record (status change, reason, operator, timestamp). Every assembly also
+records the git commit of the configuration it used
+(`run_experiment(..., config_commit=...)`, auto-resolved from the file's
+repository when omitted), so "which version went live" stays traceable.
+
 ## Run artifacts and performance accounting
 
 Performance is computed by replaying the run's event stream — never from a
@@ -219,7 +266,9 @@ which depends only on these artifact files) consume a run.
 ## Reproducibility contract
 
 - Same manifest inputs (config, seed, code version, data watermarks) rebuild
-  the same `run_id` — it is the SHA-256 of their canonical JSON.
+  the same `run_id` — it is the SHA-256 of their canonical JSON. Lifecycle
+  audit records and the experiment config's git commit are provenance
+  annotations: archived in the manifest, never part of the run-id identity.
 - Two runs with identical inputs produce identical event journals and
   digests; `EventBus.journal_digest` is the bit-level identity check, and
   the emitted intents reproduce identically too.

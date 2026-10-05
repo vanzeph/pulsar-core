@@ -27,6 +27,7 @@ from .errors import (
     ClockWentBackwardsError,
     DataGapError,
     ExperimentConfigError,
+    LifecycleError,
     PulsarCoreError,
 )
 from .events import Event, EventKind, SessionPhase, TimerPayload
@@ -159,6 +160,19 @@ from .runner import (
     run_sweep,
 )
 
+# -- experiment lifecycle: candidate -> active -> retired (C6) -------------------
+
+from .lifecycle import (
+    RUN_MODES,
+    STATUS_ALLOWED_MODES,
+    ExperimentStatus,
+    LifecycleRecord,
+    activate_experiment,
+    experiment_commit,
+    retire_experiment,
+    validate_assembly,
+)
+
 try:
     __version__ = version("pulsar-core")
 except PackageNotFoundError:  # pragma: no cover - source checkout without install
@@ -192,6 +206,7 @@ __all__ = [
     "DataGapError",
     "ClockWentBackwardsError",
     "ExperimentConfigError",
+    "LifecycleError",
     # strategy parameters
     "Param",
     "Params",
@@ -309,4 +324,13 @@ __all__ = [
     "VenueFactory",
     "run_experiment",
     "run_sweep",
+    # experiment lifecycle (上下线)
+    "RUN_MODES",
+    "ExperimentStatus",
+    "STATUS_ALLOWED_MODES",
+    "LifecycleRecord",
+    "validate_assembly",
+    "activate_experiment",
+    "retire_experiment",
+    "experiment_commit",
 ]

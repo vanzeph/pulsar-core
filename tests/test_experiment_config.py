@@ -25,6 +25,7 @@ from pulsar_core.modelers import IcWeightedScorer, LinearScoreScorer
 BASE = """
 [experiment]
 id = "base_case"
+status = "candidate"
 
 [universe]
 symbols = ["600000", "600009", "600016"]
@@ -85,6 +86,7 @@ class TestValidDocuments:
 [experiment]
 id = "momentum_value_2026q4"
 universe = "hs300"
+status = "active"
 
 [factors]
 names = ["momentum_20", "volatility_20", "reversal_5"]

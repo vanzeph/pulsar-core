@@ -28,6 +28,8 @@ from pydantic import Field
 
 from pulsar_contracts import Bar, ContractModel
 
+from .lifecycle import LifecycleRecord
+
 __all__ = [
     "RunManifest",
     "load_manifest",
@@ -118,7 +120,17 @@ def bars_watermark(bars: Iterable[Bar]) -> dict[str, str]:
 
 
 class RunManifest(ContractModel):
-    """Immutable record of one run's reproducibility inputs."""
+    """Immutable record of one run's reproducibility inputs.
+
+    Two fields are a deliberate *audit overlay*, outside the run-id
+    identity: ``lifecycle`` (上下线 actions observed by this run — e.g. a
+    mid-run retire — with reason, operator and timestamp) and
+    ``config_commit`` (the git commit of the experiment configuration the
+    assembly used, so "which version went live" stays traceable). They
+    annotate governance provenance; they never fork run ids, and a retire
+    record can therefore be appended to a running session's manifest
+    after its run id was already derived.
+    """
 
     schema_version: int = Field(default=_SCHEMA_VERSION)
     run_id: str = Field(min_length=8)
@@ -127,6 +139,8 @@ class RunManifest(ContractModel):
     seed: int
     code_version: str = Field(min_length=1)
     data_watermarks: dict[str, str] = Field(default_factory=dict)
+    config_commit: "str | None" = None
+    lifecycle: list[LifecycleRecord] = Field(default_factory=list)
 
     # -- construction -------------------------------------------------------
 
@@ -139,12 +153,16 @@ class RunManifest(ContractModel):
         config: Mapping[str, Any] | None = None,
         code_version: str | None = None,
         data_watermarks: Mapping[str, str] | None = None,
+        config_commit: "str | None" = None,
+        lifecycle: "Iterable[LifecycleRecord] | None" = None,
     ) -> "RunManifest":
         """Derive a manifest (and its run id) from the run's inputs.
 
         The run id is the first :data:`_RUN_ID_HEX_CHARS` hex characters of
         the SHA-256 over the canonical JSON of all identity fields, so the
         same inputs always rebuild the same manifest with the same run id.
+        ``config_commit`` and ``lifecycle`` are audit provenance and are
+        stored but excluded from the derivation (see the class docstring).
         """
         if mode not in MODES:
             raise ValueError(f"unknown run mode {mode!r}; expected one of {MODES}")
@@ -165,7 +183,12 @@ class RunManifest(ContractModel):
             inputs["config"] = json.loads(_canonical_json(inputs["config"]))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"manifest inputs must be JSON-native: {exc}") from exc
-        return cls(run_id=cls._derive_run_id(inputs), **inputs)
+        return cls(
+            run_id=cls._derive_run_id(inputs),
+            config_commit=config_commit,
+            lifecycle=list(lifecycle) if lifecycle else [],
+            **inputs,
+        )
 
     @staticmethod
     def _derive_run_id(inputs: Mapping[str, Any]) -> str:
@@ -197,6 +220,19 @@ class RunManifest(ContractModel):
         code version; callers should check this before rerunning.
         """
         return self.code_version == current_version
+
+    # -- lifecycle audit overlay ------------------------------------------------
+
+    def record_lifecycle(self, record: LifecycleRecord) -> None:
+        """Append one lifecycle audit record to this manifest, in place.
+
+        The one sanctioned late mutation of a manifest: a running session
+        that receives a retire (下线) stamps the action into the manifest
+        it was built from, so the archived document answers "why did this
+        run stop trading". The record joins the audit overlay only — the
+        run id and identity stay untouched by construction.
+        """
+        self.lifecycle.append(record)
 
     # -- persistence --------------------------------------------------------
 

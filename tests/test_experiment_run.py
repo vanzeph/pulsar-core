@@ -61,6 +61,7 @@ def make_venue(bus):
 MOMENTUM_TOML = """
 [experiment]
 id = "momentum_top2"
+status = "candidate"
 
 [universe]
 symbols = ["UP", "MILD", "FLAT", "WOBBLY", "MILD_DN", "DN"]
@@ -86,6 +87,7 @@ seed = 3
 LOW_VOL_TOML = """
 [experiment]
 id = "low_vol_top1"
+status = "candidate"
 
 [universe]
 symbols = ["UP", "MILD", "FLAT", "WOBBLY", "MILD_DN", "DN"]

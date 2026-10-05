@@ -18,6 +18,7 @@ __all__ = [
     "DataGapError",
     "ClockWentBackwardsError",
     "ExperimentConfigError",
+    "LifecycleError",
 ]
 
 
@@ -55,3 +56,30 @@ class ExperimentConfigError(PulsarCoreError):
     not address the template — a broken config must fail loudly at load
     time instead of half-running later.
     """
+
+
+class LifecycleError(PulsarCoreError):
+    """An experiment lifecycle rule was violated (模型配置生命周期).
+
+    Raised when an assembly attempts to run an experiment in a mode its
+    status does not admit (paper/live with a non-active config, anything
+    with a retired one), when a status transition is illegal (only
+    candidate->active and active->retired exist), when activation lacks
+    explicit human confirmation, or when a retire/activate call is
+    malformed (empty reason or operator, non-sha commit).
+
+    Carries the offending ``status`` and/or ``mode`` when known; the
+    message always states status, mode and the reason together so the
+    failure is self-explaining in logs.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: "str | None" = None,
+        mode: "str | None" = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.mode = mode
