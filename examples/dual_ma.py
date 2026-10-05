@@ -58,6 +58,7 @@ from pulsar_core import (
     StrategyBase,
     StrategyRuntime,
     standard_risk_chain,
+    write_run_artifacts,
 )
 
 SYMBOL = "600000"
@@ -309,6 +310,15 @@ def main() -> None:
 
     result = session.run()
 
+    # run artifacts: manifest + events.parquet + metrics report, side by side
+    # in one run directory (the contract the visualization layer reads)
+    artifacts = write_run_artifacts(
+        result,
+        events=bus.journal,
+        initial_cash=100_000.0,
+        directory=f"runs/{result.run_id}",
+    )
+
     buys = [s.intent for s in runtime.submissions if s.intent.side is Side.BUY]
     sells = [s.intent for s in runtime.submissions if s.intent.side is Side.SELL]
     final = runtime.account.snapshot()
@@ -326,6 +336,20 @@ def main() -> None:
     print("final cash / equity   : %.2f / %.2f" % (final.cash, final.equity))
     print("final positions       :", [p.model_dump() for p in final.positions])
     print("strategy state        :", runtime.state)
+    metrics = artifacts.report.metrics
+    print("run artifacts         :", artifacts.directory)
+    print(
+        "total return / ann.   : %.4f / %.4f"
+        % (metrics.total_return, metrics.annual_return)
+    )
+    print(
+        "max drawdown / sharpe : %.4f / %.2f"
+        % (metrics.max_drawdown, metrics.sharpe)
+    )
+    print(
+        "turnover (double-sd.) : %.4f  fees: %.2f"
+        % (metrics.turnover_ratio, artifacts.report.fee_attribution.total)
+    )
 
 
 if __name__ == "__main__":

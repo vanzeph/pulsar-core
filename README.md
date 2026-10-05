@@ -3,13 +3,14 @@
 The deterministic engine core of the [Pulsar](https://github.com/vanzeph)
 A-share quant system: a single-threaded event kernel, a Clock abstraction
 that makes backtest and realtime runs share one loop, a bar-level historical
-replay session, the RunManifest reproducibility mechanism, and the strategy
+replay session, the RunManifest reproducibility mechanism, the strategy
 framework with its `Signal -> TargetPortfolio -> RiskGate -> OrderIntent`
-pipeline.
+pipeline, and performance accounting with its run artifacts
+(`events.parquet` + metrics report).
 
-Status: alpha — the kernel, replay, manifest, strategy framework and intent
-pipeline are in; the factor library, the full five-rule risk set and
-performance accounting land in later releases.
+Status: alpha — the kernel, replay, manifest, strategy framework, intent
+pipeline and performance accounting are in; the factor library and the full
+five-rule risk set land in later releases.
 
 ## Design in one paragraph
 
@@ -105,6 +106,39 @@ result = session.run()
 result.manifest.write("run.json")   # reproducibility record
 print(runtime.intents, runtime.rejections, runtime.account.snapshot())
 ```
+
+## Run artifacts and performance accounting
+
+Performance is computed by replaying the run's event stream — never from a
+channel implementation — so backtest and live runs share one set of metric
+definitions. After a run ends, `write_run_artifacts` persists the complete
+run directory:
+
+```python
+from pulsar_core import write_run_artifacts
+
+artifacts = write_run_artifacts(
+    result, events=bus.journal, initial_cash=100_000.0,
+    directory=f"runs/{result.run_id}",
+)
+```
+
+producing, side by side:
+
+| file | contract |
+|-|-|
+| `run_manifest.json` | the RunManifest reproducibility record |
+| `events.parquet` | the full event journal (schema-versioned; one row per dispatched event with identity, denormalized query columns and the lossless canonical `payload`) |
+| `metrics_report.json` | `schema_version` + `equity_curve` / `metrics` / `fee_attribution` |
+
+The metrics report carries the NAV curve (one point per trading day),
+total and annualized return, annualized volatility, Sharpe, max drawdown,
+double-sided turnover and fee attribution (commission, stamp duty,
+transfer fee, slippage drag — each also as a fraction of initial cash).
+`read_event_archive` loads an archived run back into validated kernel
+events, so an archived run recomputes its equity curve bit-identically —
+that replay path is exactly how review and attribution tools (and the UI,
+which depends only on these artifact files) consume a run.
 
 ## Reproducibility contract
 

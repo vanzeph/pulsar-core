@@ -24,3 +24,6 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Example run output (examples/dual_ma.py writes run artifacts here)
+runs/

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pulsar-core"
-version = "0.2.0"
-description = "Pulsar core engine: deterministic event kernel, Clock abstraction, bar replay session, RunManifest reproducibility, and the Signal -> TargetPortfolio -> RiskGate -> OrderIntent strategy pipeline."
+version = "0.3.0"
+description = "Pulsar core engine: deterministic event kernel, Clock abstraction, bar replay session, RunManifest reproducibility, the Signal -> TargetPortfolio -> RiskGate -> OrderIntent strategy pipeline, performance accounting from event replay, and run artifacts (events.parquet + metrics report)."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "vanzeph" }]
@@ -13,6 +13,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.5,<3",
     "pandas>=2.0",
+    "pyarrow>=14",
     "pulsar-contracts @ git+https://github.com/vanzeph/pulsar-contracts.git@f385fbd",
 ]
 classifiers = [
@@ -64,4 +65,10 @@ files = ["src"]
 [[tool.mypy.overrides]]
 module = "pulsar_contracts"
 # see the disallow_subclassing_any note above
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+# pyarrow ships no py.typed marker (PEP 561) yet; used only for the
+# events.parquet artifact writer.
 ignore_missing_imports = true

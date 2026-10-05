@@ -29,6 +29,7 @@ ALLOWED_IMPORT_ROOTS = {
     "heapq",
     "importlib",
     "json",
+    "math",
     "os",
     "pathlib",
     "random",
@@ -37,6 +38,7 @@ ALLOWED_IMPORT_ROOTS = {
     # basic third-party libraries
     "pydantic",
     "pandas",
+    "pyarrow",
     # upstream contracts (the only permitted pulsar dependency)
     "pulsar_contracts",
     # self
@@ -61,7 +63,12 @@ FORBIDDEN_RUNTIME_MODULES = {
     "httpx",
     "aiohttp",
     "urllib3",
-    "socket",
+    # NOTE: stdlib `socket` is deliberately NOT asserted here. pyarrow —
+    # required for the events.parquet artifact writer — transitively loads
+    # `socket` (and pandas 3.x eagerly imports pyarrow when installed), so
+    # `socket` in sys.modules proves nothing about network behavior. The
+    # network-client policy is enforced by the entries above; `websocket`
+    # stays banned as an actual network client library.
     "websocket",
     # sibling pulsar packages (dependency direction: they may not appear here)
     "pulsar_data",

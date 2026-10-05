@@ -3,10 +3,11 @@
 This package implements the single-threaded deterministic event kernel, the
 Clock abstraction that lets backtest and realtime runs share one loop, the
 bar-level historical replay session, the RunManifest reproducibility
-mechanism, and the strategy framework with its Signal -> TargetPortfolio ->
+mechanism, the strategy framework with its Signal -> TargetPortfolio ->
 RiskGate -> OrderIntent pipeline guarded by the five-rule pre-trade risk
 chain (single-position cap, gross exposure cap, daily-loss halt, symbol
-blacklist, liquidity floor).
+blacklist, liquidity floor), and performance accounting with its run
+artifacts (events.parquet archive + metrics report).
 
 Dependency policy (architecture baseline): pulsar-core depends only on
 pulsar-contracts plus basic libraries. It must never import a data-source or
@@ -67,6 +68,29 @@ from .strategy import (
     IndicatorValue,
     StrategyBase,
     TickContext,
+)
+
+# -- performance accounting & run artifacts (C5) -------------------------------
+
+from .artifacts import (
+    EVENTS_FILENAME,
+    EVENTS_SCHEMA_VERSION,
+    MANIFEST_FILENAME,
+    METRICS_FILENAME,
+    RunArtifacts,
+    read_event_archive,
+    write_event_archive,
+    write_run_artifacts,
+)
+from .performance import (
+    PERIODS_PER_YEAR,
+    EquityPoint,
+    FeeAttribution,
+    MetricsReport,
+    PerformanceMetrics,
+    build_metrics_report,
+    compute_equity_curve,
+    load_metrics_report,
 )
 
 try:
@@ -147,4 +171,21 @@ __all__ = [
     "StrategyRuntime",
     "Submission",
     "DEFAULT_HISTORY_DEPTH",
+    # performance accounting & run artifacts
+    "PERIODS_PER_YEAR",
+    "EquityPoint",
+    "PerformanceMetrics",
+    "FeeAttribution",
+    "MetricsReport",
+    "compute_equity_curve",
+    "build_metrics_report",
+    "load_metrics_report",
+    "EVENTS_SCHEMA_VERSION",
+    "MANIFEST_FILENAME",
+    "EVENTS_FILENAME",
+    "METRICS_FILENAME",
+    "RunArtifacts",
+    "write_event_archive",
+    "read_event_archive",
+    "write_run_artifacts",
 ]
