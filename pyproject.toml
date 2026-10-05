@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pulsar-core"
-version = "0.1.0"
-description = "Pulsar core engine: single-threaded deterministic event kernel, Clock abstraction, bar replay session and RunManifest reproducibility."
+version = "0.2.0"
+description = "Pulsar core engine: deterministic event kernel, Clock abstraction, bar replay session, RunManifest reproducibility, and the Signal -> TargetPortfolio -> RiskGate -> OrderIntent strategy pipeline."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "vanzeph" }]

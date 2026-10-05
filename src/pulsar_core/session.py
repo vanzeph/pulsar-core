@@ -132,6 +132,16 @@ class ReplaySession:
     frequency and adjustment mode, the random seed, an optional config
     snapshot and code version for the manifest, and optionally a
     pre-built bus (tests and future assembly layers may wire their own).
+
+    ``on_manifest`` — an optional callback receiving the run's
+    :class:`~pulsar_core.manifest.RunManifest` right after it is built and
+    before replay starts. Consumers that must know the ``run_id`` before
+    any event dispatches (the strategy runtime keys order-intent
+    idempotency off it) attach through this hook, e.g.::
+
+        bus = EventBus(BacktestClock(...))
+        runtime = StrategyRuntime(bus=bus, port=venue, strategy=dual_ma)
+        session = ReplaySession(..., bus=bus, on_manifest=runtime.bind_manifest)
     """
 
     def __init__(
@@ -147,6 +157,7 @@ class ReplaySession:
         config: dict[str, Any] | None = None,
         code_version: str | None = None,
         bus: EventBus | None = None,
+        on_manifest: Callable[[RunManifest], None] | None = None,
     ) -> None:
         if start > end:
             raise ValueError(f"start {start} must not precede end {end}")
@@ -161,6 +172,7 @@ class ReplaySession:
         self._seed = seed
         self._config: dict[str, Any] = dict(config) if config else {}
         self._code_version = code_version
+        self._on_manifest = on_manifest
         self._bus = bus if bus is not None else EventBus(
             BacktestClock(_day_start(start))
         )
@@ -222,6 +234,9 @@ class ReplaySession:
             code_version=self._code_version,
             data_watermarks=bars_watermark(bars),
         )
+
+        if self._on_manifest is not None:
+            self._on_manifest(manifest)
 
         self._replay(trading_days, bars_by_day)
 

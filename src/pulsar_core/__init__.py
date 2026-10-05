@@ -2,8 +2,9 @@
 
 This package implements the single-threaded deterministic event kernel, the
 Clock abstraction that lets backtest and realtime runs share one loop, the
-bar-level historical replay session, and the RunManifest reproducibility
-mechanism.
+bar-level historical replay session, the RunManifest reproducibility
+mechanism, and the strategy framework with its Signal -> TargetPortfolio ->
+RiskGate -> OrderIntent pipeline.
 
 Dependency policy (architecture baseline): pulsar-core depends only on
 pulsar-contracts plus basic libraries. It must never import a data-source or
@@ -21,6 +22,44 @@ from .errors import ClockWentBackwardsError, DataGapError, PulsarCoreError
 from .events import Event, EventKind, SessionPhase, TimerPayload
 from .manifest import RunManifest, bars_watermark, code_version, load_manifest
 from .session import ReplaySession, RunResult
+
+# -- strategy framework & intent pipeline (C2) --------------------------------
+
+from .account import PortfolioView, PositionView, TradingAccount
+from .params import BoundParams, Param, Params
+from .rebalance import (
+    DEFAULT_LOT_SIZE,
+    OrderDraft,
+    RebalanceResult,
+    SkippedLeg,
+    compute_rebalance,
+)
+from .risk import (
+    GateOutcome,
+    RejectionRecord,
+    RiskGate,
+    RiskRule,
+    RiskView,
+    SinglePositionCapRule,
+)
+from .runtime import DEFAULT_HISTORY_DEPTH, StrategyRuntime, Submission
+from .signals import (
+    EqualWeightBuilder,
+    PassThroughBuilder,
+    PortfolioBuilder,
+    Signal,
+    TargetLeg,
+    TargetPortfolio,
+)
+from .strategy import (
+    FIELD_NAMES,
+    BaseContext,
+    BarContext,
+    FillContext,
+    IndicatorValue,
+    StrategyBase,
+    TickContext,
+)
 
 try:
     __version__ = version("pulsar-core")
@@ -54,4 +93,44 @@ __all__ = [
     "PulsarCoreError",
     "DataGapError",
     "ClockWentBackwardsError",
+    # strategy parameters
+    "Param",
+    "Params",
+    "BoundParams",
+    # signals & target portfolios
+    "Signal",
+    "TargetLeg",
+    "TargetPortfolio",
+    "PortfolioBuilder",
+    "PassThroughBuilder",
+    "EqualWeightBuilder",
+    # account (decision-side book)
+    "TradingAccount",
+    "PositionView",
+    "PortfolioView",
+    # strategy framework
+    "StrategyBase",
+    "BaseContext",
+    "BarContext",
+    "TickContext",
+    "FillContext",
+    "IndicatorValue",
+    "FIELD_NAMES",
+    # rebalance (diff calculation)
+    "DEFAULT_LOT_SIZE",
+    "OrderDraft",
+    "SkippedLeg",
+    "RebalanceResult",
+    "compute_rebalance",
+    # risk chain
+    "RiskRule",
+    "RiskGate",
+    "RiskView",
+    "RejectionRecord",
+    "GateOutcome",
+    "SinglePositionCapRule",
+    # intent pipeline
+    "StrategyRuntime",
+    "Submission",
+    "DEFAULT_HISTORY_DEPTH",
 ]
