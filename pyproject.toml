@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.5,<3",
     "pandas>=2.0",
     "pyarrow>=14",
-    "pulsar-contracts @ git+https://github.com/vanzeph/pulsar-contracts.git@f385fbd",
+    "pulsar-contracts @ git+https://github.com/vanzeph/pulsar-contracts.git@2e3e393",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
