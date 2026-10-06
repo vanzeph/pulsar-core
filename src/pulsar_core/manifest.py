@@ -32,6 +32,7 @@ from .lifecycle import LifecycleRecord
 
 __all__ = [
     "RunManifest",
+    "ModelArtifactRecord",
     "load_manifest",
     "code_version",
     "bars_watermark",
@@ -101,6 +102,25 @@ def code_version() -> str:
 _default_code_version = code_version
 
 
+class ModelArtifactRecord(ContractModel):
+    """Provenance of one run's versioned ML model artifact (模型工件段).
+
+    Recorded when a torch modeler trained during the run (``origin`` =
+    ``trained``) or scored from a pinned artifact (``origin`` =
+    ``pinned``). Like the rest of the audit overlay it annotates the run:
+    the hashes pin *which bytes* produced the scores, they do not fork
+    the run id (a deterministic rerun rebuilds the same weights and the
+    same run id before this section exists).
+    """
+
+    model_type: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    weights_sha256: str = Field(min_length=1)
+    config_sha256: str = Field(min_length=1)
+    origin: str = Field(min_length=1)
+    environment: dict[str, Any] = Field(default_factory=dict)
+
+
 def bars_watermark(bars: Iterable[Bar]) -> dict[str, str]:
     """Data-lake watermark per bar partition, computed from fetched bars.
 
@@ -130,6 +150,11 @@ class RunManifest(ContractModel):
     annotate governance provenance; they never fork run ids, and a retire
     record can therefore be appended to a running session's manifest
     after its run id was already derived.
+
+    ``model_artifact`` joins that overlay for ML runs (模型工件段): the
+    pinned weights/config hashes of the modeler that produced the run's
+    scores. It appears after training resolved, so it likewise cannot
+    participate in the run-id derivation.
     """
 
     schema_version: int = Field(default=_SCHEMA_VERSION)
@@ -141,6 +166,7 @@ class RunManifest(ContractModel):
     data_watermarks: dict[str, str] = Field(default_factory=dict)
     config_commit: "str | None" = None
     lifecycle: list[LifecycleRecord] = Field(default_factory=list)
+    model_artifact: "ModelArtifactRecord | None" = None
 
     # -- construction -------------------------------------------------------
 
@@ -233,6 +259,23 @@ class RunManifest(ContractModel):
         run id and identity stay untouched by construction.
         """
         self.lifecycle.append(record)
+
+    def record_model_artifact(self, record: ModelArtifactRecord) -> None:
+        """Stamp this run's model artifact provenance into the manifest.
+
+        The ML counterpart of the lifecycle overlay: the runner records
+        the artifact it trained (or the pinned one it scored from) after
+        the run's outcome is fixed, so the archived manifest answers
+        "which exact model bytes produced these scores" without forking
+        the run id. Setting it twice is a bug and raises.
+        """
+        if self.model_artifact is not None:
+            raise ValueError(
+                "this manifest already carries a model artifact record"
+            )
+        # ContractModel is frozen; this is the sanctioned late-stamp escape
+        # hatch (mirroring how lifecycle records join their list field).
+        object.__setattr__(self, "model_artifact", record)
 
     # -- persistence --------------------------------------------------------
 

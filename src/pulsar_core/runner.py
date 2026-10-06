@@ -26,6 +26,7 @@ contract: shared ``experiment_id``, pairwise-distinct ``run_id``.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Callable, Union
 
 from pulsar_contracts import AdjustMode, Bar, ExecutionPort, Freq, MarketDataPort
@@ -35,7 +36,7 @@ from .clock import BacktestClock
 from .errors import PulsarCoreError
 from .experiment import ExperimentConfig, SweepExpansion, expand_sweep
 from .lifecycle import experiment_commit, validate_assembly
-from .manifest import RunManifest
+from .manifest import ModelArtifactRecord, RunManifest, bars_watermark
 from .pipeline import FactorEngine, FactorModelStrategy, rebalance_dates, required_warmup
 from .rebalance import DEFAULT_LOT_SIZE
 from .risk import RiskGate
@@ -116,6 +117,94 @@ def _warmup_start(port: MarketDataPort, start: date, warmup_bars: int) -> date:
     return warmup_start
 
 
+def _session_config_block(experiment: ExperimentConfig) -> dict[str, Any]:
+    """The session block :meth:`ReplaySession._snapshot_config` prepends.
+
+    Kept beside the preliminary-manifest derivation below so the two stay
+    in lockstep — the derived run id is only useful while it equals the
+    one the session itself will build from the same inputs.
+    """
+    return {
+        "session": {
+            "kind": "bar_replay",
+            "symbols": list(experiment.symbols),
+            "start": experiment.start,
+            "end": experiment.end,
+            "freq": Freq.DAILY.value,
+            "adjust": AdjustMode.FORWARD.value,
+        }
+    }
+
+
+def _preliminary_run_id(
+    experiment: ExperimentConfig,
+    *,
+    bars: "list[Bar]",
+    config: dict[str, Any],
+) -> str:
+    """Derive the run id before the session builds its own manifest.
+
+    ML artifact reuse needs the run id before training (the artifact lives
+    at ``runs/<run_id>/model_artifact``), so the same manifest inputs the
+    session will use — mode, seed, config snapshot (session block +
+    experiment document + sweep point), code version and the bar
+    watermarks — are run through the same :meth:`RunManifest.build`
+    derivation here. The bars this runner fetched are a warmup-prefixed
+    superset of the session's window, so they are clipped to the replay
+    window first — the session's watermark set is exactly the partitions
+    it fetched, and a drift between this derivation and the session's own
+    fails the runner's post-run invariant check loudly.
+    """
+    window_bars = [
+        bar
+        for bar in bars
+        if experiment.start <= bar.ts.date() <= experiment.end
+    ]
+    merged = {**_session_config_block(experiment), **config}
+    preliminary = RunManifest.build(
+        mode="research",
+        seed=experiment.seed,
+        config=merged,
+        data_watermarks=bars_watermark(window_bars),
+    )
+    return preliminary.run_id
+
+
+def _torch_scorer(model: Any) -> "Any | None":
+    """The model when it is a torch artifact carrier, else ``None``."""
+    from .ml import TorchModelScorer
+
+    return model if isinstance(model, TorchModelScorer) else None
+
+
+def _record_artifact(
+    manifest: RunManifest,
+    *,
+    model: Any,
+    artifact_dir: Any,
+    origin: str,
+    hashes: "dict[str, str] | None",
+) -> None:
+    from .ml.artifacts import (
+        TRAINING_CONFIG_FILENAME,
+        WEIGHTS_FILENAME,
+        read_pinned_manifest,
+    )
+
+    if hashes is None:
+        hashes = read_pinned_manifest(artifact_dir)["files"]
+    manifest.record_model_artifact(
+        ModelArtifactRecord(
+            model_type=model.name,
+            path=str(artifact_dir),
+            weights_sha256=str(hashes[WEIGHTS_FILENAME]),
+            config_sha256=str(hashes[TRAINING_CONFIG_FILENAME]),
+            origin=origin,
+            environment=model.environment,
+        )
+    )
+
+
 def run_experiment(
     experiment: ExperimentConfig,
     *,
@@ -127,6 +216,7 @@ def run_experiment(
     bus: "EventBus | None" = None,
     expansion: SweepExpansion | None = None,
     config_commit: "str | None" = None,
+    runs_root: "str | Path | None" = None,
 ) -> ExperimentRunResult:
     """Run one (already validated) experiment over the injected ports.
 
@@ -143,6 +233,14 @@ def run_experiment(
     commit of the experiment configuration this assembly used (explicit
     sha wins; otherwise resolved from the file the config was loaded
     from), keeping "which version ran" traceable.
+
+    ``runs_root`` opts the run into ML artifact versioning (训练产物工
+    件化): a torch modeler's weights + training config + sha256 land in
+    ``<runs_root>/<run_id>/model_artifact/`` and the RunManifest gains
+    the model-artifact record. A rerun of the same run id finds the
+    pinned artifact, hash-verifies it and scores from it *without
+    retraining* — set ``model.params.retrain = true`` to force a fresh
+    training pass over the reuse.
     """
     validate_assembly("research", experiment)
     if config_commit is None and experiment.source_path is not None:
@@ -173,6 +271,29 @@ def run_experiment(
     for bar in bars:
         bars_by_symbol.setdefault(bar.symbol, []).append(bar)
 
+    # The config snapshot the session will archive (plus the sweep point).
+    config: dict[str, Any] = experiment.config_snapshot()
+    if expansion is not None and expansion.assignments:
+        config["sweep"] = {
+            "index": expansion.index,
+            "label": expansion.label,
+            "point": dict(expansion.assignments),
+        }
+
+    # ML artifact reuse: same run id -> pinned artifact -> no retraining.
+    torch_model = _torch_scorer(experiment.model) if runs_root is not None else None
+    artifact_dir: "Path | None" = None
+    preliminary_run_id: "str | None" = None
+    reused_pinned = False
+    if torch_model is not None and runs_root is not None:
+        from .ml.artifacts import model_artifact_dir
+
+        preliminary_run_id = _preliminary_run_id(experiment, bars=bars, config=config)
+        artifact_dir = model_artifact_dir(runs_root, preliminary_run_id)
+        if artifact_dir.is_dir() and not torch_model.force_retrain:
+            torch_model.load_pinned(artifact_dir)
+            reused_pinned = True
+
     engine = FactorEngine(
         symbols=experiment.symbols,
         bars=bars_by_symbol,
@@ -196,19 +317,6 @@ def run_experiment(
         lot_size=lot_size,
     )
 
-    # The as-written document is the manifest's experiment snapshot; the
-    # session adds its own "session" block next to it (the schema's
-    # sections never collide with that key). Sweep runs additionally
-    # carry their point, which is what distinguishes the run ids of one
-    # family while the experiment id stays shared.
-    config: dict[str, Any] = experiment.config_snapshot()
-    if expansion is not None and expansion.assignments:
-        config["sweep"] = {
-            "index": expansion.index,
-            "label": expansion.label,
-            "point": dict(expansion.assignments),
-        }
-
     session = ReplaySession(
         port=port,
         symbols=list(experiment.symbols),
@@ -221,6 +329,31 @@ def run_experiment(
         on_manifest=runtime.bind_manifest,
     )
     run = session.run()
+
+    if artifact_dir is not None and torch_model is not None:
+        assert preliminary_run_id is not None  # artifact path was derived from it
+        if preliminary_run_id != run.run_id:
+            raise PulsarCoreError(
+                "preliminary run id drifted from the session's manifest; "
+                "the ML artifact reuse decision was made against a stale id"
+            )
+        if reused_pinned:
+            _record_artifact(
+                run.manifest,
+                model=torch_model,
+                artifact_dir=artifact_dir,
+                origin="pinned",
+                hashes=None,
+            )
+        elif torch_model.artifact_ready:
+            hashes = torch_model.save_artifact(artifact_dir)
+            _record_artifact(
+                run.manifest,
+                model=torch_model,
+                artifact_dir=artifact_dir,
+                origin="trained",
+                hashes=hashes,
+            )
 
     run_label = expansion.label if expansion is not None else ""
     run_index = expansion.index if expansion is not None else 0
@@ -242,12 +375,15 @@ def run_sweep(
     initial_cash: float = 1_000_000.0,
     lot_size: int = DEFAULT_LOT_SIZE,
     gate: "RiskGate | None" = None,
+    runs_root: "str | Path | None" = None,
 ) -> SweepReport:
     """Expand and run the whole sweep family sequentially.
 
     Every run gets a fresh bus and a fresh venue from ``make_venue``.
-    The family contract is asserted, not assumed: one shared experiment
-    id in every manifest, and pairwise-distinct run ids.
+    ``runs_root`` passes the ML artifact root through to every member run
+    (each expansion trains or reuses its own pinned artifact under its
+    own run id). The family contract is asserted, not assumed: one shared
+    experiment id in every manifest, and pairwise-distinct run ids.
     """
     expansions = expand_sweep(experiment)
     results: list[ExperimentRunResult] = []
@@ -261,6 +397,7 @@ def run_sweep(
                 lot_size=lot_size,
                 gate=gate,
                 expansion=expansion,
+                runs_root=runs_root,
             )
         )
     experiment_ids = {result.experiment_id for result in results}

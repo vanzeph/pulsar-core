@@ -173,6 +173,33 @@ from .lifecycle import (
     validate_assembly,
 )
 
+# -- ML modelers: torch behind the optional [ml] extra (ML1) --------------------
+# Importing pulsar_core.ml registers mlp_torch / lstm_torch in MODEL_REGISTRY
+# without importing torch (registration is metadata-only; the torch import
+# happens inside the ML code paths themselves).
+
+from .ml import (  # noqa: E402
+    ARTIFACT_DIRNAME,
+    ARTIFACT_FILENAMES,
+    TRAINING_CONFIG_FILENAME,
+    HASHES_FILENAME,
+    ML_EXTRA_INSTALL_HINT,
+    WEIGHTS_FILENAME,
+    LstmTorchScorer,
+    MlpTorchScorer,
+    TorchModelScorer,
+    enable_determinism,
+    load_pinned,
+    model_artifact_dir,
+    register_torch_modelers,
+    require_torch,
+    resolve_device,
+    save_model_artifact,
+    sha256_file,
+    training_environment,
+)
+from .manifest import ModelArtifactRecord
+
 try:
     __version__ = version("pulsar-core")
 except PackageNotFoundError:  # pragma: no cover - source checkout without install
@@ -333,4 +360,24 @@ __all__ = [
     "activate_experiment",
     "retire_experiment",
     "experiment_commit",
+    # ML modelers (torch via the optional [ml] extra)
+    "ModelArtifactRecord",
+    "TorchModelScorer",
+    "MlpTorchScorer",
+    "LstmTorchScorer",
+    "ML_EXTRA_INSTALL_HINT",
+    "require_torch",
+    "resolve_device",
+    "enable_determinism",
+    "training_environment",
+    "ARTIFACT_DIRNAME",
+    "WEIGHTS_FILENAME",
+    "TRAINING_CONFIG_FILENAME",
+    "HASHES_FILENAME",
+    "ARTIFACT_FILENAMES",
+    "sha256_file",
+    "model_artifact_dir",
+    "save_model_artifact",
+    "load_pinned",
+    "register_torch_modelers",
 ]

@@ -108,6 +108,16 @@ class _EngineView(FactorHistoryView):
     def factor_values(self, factor: str, as_of: date) -> Mapping[str, "float | None"]:
         return self._engine._raw_oriented(factor, as_of)
 
+    def preprocessed_values(
+        self, factor: str, as_of: date
+    ) -> Mapping[str, "float | None"]:
+        # the same chain _section_at applies, so ML modelers train and score
+        # on one consistent panel (never a raw/preprocessed mix)
+        column = self._engine._raw_oriented(factor, as_of)
+        for step in self._engine._preprocess:
+            column = step.apply(column)
+        return column
+
     def forward_returns(self, from_date: date, horizon: int) -> Mapping[str, float]:
         return self._engine._forward_returns(from_date, horizon)
 

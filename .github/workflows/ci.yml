@@ -76,6 +76,31 @@ jobs:
                      assert pcore.EventBus and pcore.ReplaySession and pcore.RunManifest; \
                      print('install ok', pcore.__version__)"
 
+  ml:
+    # ML modelers (mlp_torch / lstm_torch) behind the optional [ml] extra:
+    # torch CPU wheels first (the default PyPI linux wheel bundles the CUDA
+    # runtime and is ~10x larger), then the package so the extra resolves to
+    # the already-satisfied CPU install. Runs the full suite so the ML path
+    # (end-to-end training -> scoring -> risk exit, pinned-artifact
+    # bit-identity, sweeps) is exercised on every push.
+    name: ML modelers (torch CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install torch CPU wheels, then the package with dev tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[dev]"
+
+      - name: Tests (full suite incl. tests/test_ml.py)
+        run: python -m pytest
+
   topology-gate:
     name: cross-repo topology gate
     runs-on: ubuntu-latest

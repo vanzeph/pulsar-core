@@ -1,0 +1,40 @@
+# mlp_torch: the cross-sectional neural modeler (optional extra).
+#
+# Requires torch:  pip install "pulsar-core[ml]"
+# (Windows CUDA wheels:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124 )
+#
+# Training consumes the preprocessed factor panel over the trailing
+# `lookback` evaluation dates (labels: `horizon`-bar forward returns,
+# z-scored per date) and scores every decision date from the same
+# weights. Pass runs_root=<your runs dir> to the runner (or use the app
+# drill runner) and the weights + training config + sha256 land under
+# runs/<run_id>/model_artifact/; a rerun of the same run id reloads the
+# pinned artifact and does NOT retrain (set retrain = true to force).
+
+[experiment]
+id = "mlp_torch_momentum_2026q4"
+description = "MLP over momentum/volatility/reversal panel, top-2 monthly"
+status = "candidate"
+
+[universe]
+symbols = ["600000", "600009", "600016", "600028", "600030"]
+
+[factors]
+names = ["momentum_20", "volatility_20", "reversal_5"]
+preprocess = ["winsorize", "zscore"]
+
+[model]
+type = "mlp_torch"
+params = { device = "auto", epochs = 50, lr = 0.01, hidden = [16], lookback = 120, horizon = 5, batch_size = 256, seed = 0 }
+
+[portfolio]
+method = "top_n"
+top_n = 2
+rebalance = "monthly"
+
+[backtest]
+start = 2026-04-01
+end = 2026-09-30
+costs = "a_share_default"
+seed = 7

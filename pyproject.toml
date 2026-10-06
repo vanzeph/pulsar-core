@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pulsar-core"
-version = "0.5.0"
-description = "Pulsar core engine: deterministic event kernel, Clock abstraction, bar replay session, RunManifest reproducibility, the Signal -> TargetPortfolio -> RiskGate -> OrderIntent strategy pipeline, performance accounting from event replay with run artifacts, the factor/modeler/experiment research layer, and the experiment lifecycle state machine (candidate/active/retired with assembly validation and retire-stop)."
+version = "0.6.0"
+description = "Pulsar core engine: deterministic event kernel, Clock abstraction, bar replay session, RunManifest reproducibility, the Signal -> TargetPortfolio -> RiskGate -> OrderIntent strategy pipeline, performance accounting from event replay with run artifacts, the factor/modeler/experiment research layer, the experiment lifecycle state machine (candidate/active/retired with assembly validation and retire-stop), and torch ML modelers (mlp_torch / lstm_torch) behind the optional [ml] extra with versioned training artifacts and pinned bit-identical inference."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "vanzeph" }]
@@ -34,6 +34,14 @@ dev = [
     "pytest>=8",
     "mypy>=1.8",
     "pandas-stubs>=2",
+]
+# ML modelers (mlp_torch / lstm_torch): torch is deliberately an optional
+# extra — the default install carries zero torch and `import pulsar_core`
+# plus every non-ML path stay torch-free. Windows CUDA: install the wheels
+# from the official index instead, e.g.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+ml = [
+    "torch>=2.2",
 ]
 
 [project.urls]
@@ -71,4 +79,10 @@ ignore_missing_imports = true
 module = ["pyarrow", "pyarrow.*"]
 # pyarrow ships no py.typed marker (PEP 561) yet; used only for the
 # events.parquet artifact writer.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*"]
+# torch ships no py.typed marker (PEP 561); it is an optional [ml] extra,
+# imported only inside the ML code paths (never at module import time).
 ignore_missing_imports = true

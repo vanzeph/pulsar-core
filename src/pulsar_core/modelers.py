@@ -110,6 +110,17 @@ class FactorHistoryView:
         """The factor's oriented raw values computed at ``as_of``."""
         raise NotImplementedError
 
+    def preprocessed_values(
+        self, factor: str, as_of: date
+    ) -> Mapping[str, "float | None"]:
+        """The factor's values as the configured preprocess chain leaves them.
+
+        The ML modelers (``mlp_torch`` / ``lstm_torch``) train and score on
+        the same preprocessed panel the cross-sections carry; views that
+        serve no preprocessing fall back to the raw oriented values.
+        """
+        return self.factor_values(factor, as_of)
+
     def forward_returns(self, from_date: date, horizon: int) -> Mapping[str, float]:
         """``horizon``-bar forward close-to-close returns from ``from_date``."""
         raise NotImplementedError

@@ -41,6 +41,13 @@ ALLOWED_IMPORT_ROOTS = {
     "pydantic",
     "pandas",
     "pyarrow",
+    # numpy rides in with pandas (a declared dependency); the ML backend
+    # seeds it defensively for training determinism when present
+    "numpy",
+    # optional [ml] extra: torch is imported only inside ML code paths
+    # (function bodies), never at module import time — see the runtime
+    # test below, which asserts a plain `import pulsar_core` loads no torch.
+    "torch",
     # upstream contracts (the only permitted pulsar dependency)
     "pulsar_contracts",
     # self
