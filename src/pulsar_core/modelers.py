@@ -41,6 +41,7 @@ __all__ = [
     "ModelScorer",
     "ModelDefinition",
     "MODEL_REGISTRY",
+    "register_model",
     "EqualWeightScorer",
     "LinearScoreScorer",
     "IcWeightedScorer",
@@ -410,6 +411,19 @@ def spearman_ic(x: Mapping[str, "float | None"], y: Mapping[str, float]) -> floa
 MODEL_REGISTRY: Registry[ModelDefinition] = Registry(
     kind="model", name_of=lambda model: model.name
 )
+
+
+def register_model(definition: ModelDefinition) -> None:
+    """Register ``definition`` in :data:`MODEL_REGISTRY`.
+
+    The external registration hook of the 自定义代码组装 contract: custom
+    modelers materialized by ``pulsar-app`` from the unified store register
+    through this surface (mirroring
+    :func:`~pulsar_core.factors.register_factor`).
+    """
+    MODEL_REGISTRY.register(definition)
+
+
 MODEL_REGISTRY.register(
     ModelDefinition(
         name="equal_weight",

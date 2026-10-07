@@ -65,6 +65,25 @@ class Registry(Generic[T]):
         for alias in aliases:
             self._aliases[alias] = key
 
+    # -- removal ----------------------------------------------------------------
+
+    def discard(self, name: str) -> None:
+        """Remove the registration behind ``name`` (canonical or alias).
+
+        The inverse of :meth:`register`, added for the assembly layer's
+        *preview* passes (自定义代码组装): tooling may execute a candidate
+        module to discover what it registers, then undo exactly those
+        registrations so the process state is left as it was found.
+        Removing one item never touches other items; unknown names fail
+        loudly, mirroring :meth:`resolve`.
+        """
+        canonical = self.canonical_name(name)  # fails loudly when unknown
+        del self._items[canonical]
+        for alias, target in list(self._aliases.items()):
+            if target == canonical:
+                del self._aliases[alias]
+                self._items.pop(alias, None)
+
     # -- lookup ---------------------------------------------------------------
 
     def resolve(self, name: str) -> T:

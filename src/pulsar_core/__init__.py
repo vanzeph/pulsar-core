@@ -133,6 +133,7 @@ from .modelers import (
     LinearScoreScorer,
     ModelDefinition,
     ModelScorer,
+    register_model,
     spearman_ic,
 )
 from .pipeline import (
@@ -312,6 +313,7 @@ __all__ = [
     "volatility_factor",
     "reversal_factor",
     "range_factor",
+    "register_model",
     # cross-sectional preprocessing
     "PreprocessStep",
     "WinsorizeStep",
